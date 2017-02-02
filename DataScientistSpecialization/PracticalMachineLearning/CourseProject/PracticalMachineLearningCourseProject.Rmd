@@ -1,0 +1,175 @@
+---
+title: "Practical Machine Learning - Course project"
+author: "Shima Bentley"
+date: "February 1, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+Human Activity Recognition - HAR - has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community, especially for the development of context-aware systems. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har>. Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise.. 
+
+Six participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). This report will describe how the data captured are used to identify the parameters involved in predicting the movement involved based on the above classification, and then to predict the movement for 20 test cases.
+
+The training data were divided into two groups, a training data and a validation data (to be used to validate the data), to derived the prediction model by using the training data, to validate the model where an expected out-of-sample error rate of less than 0.5%, or 99.5% accuracy, would be acceptable before it is used to perform the prediction on the 20 test cases - that must have 100% accuracy (to obtain 20 points awarded).
+The training model developed using Random Forest was able to achieve over 99.99% accuracy, or less than 0.03% out-of-sample error, and was able to predict the 20 test cases with 100% accuracy.
+
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+
+## Getting and Cleaning Data
+
+### Load R Packages
+
+```{r message=FALSE, warning=FALSE}
+library(caret)
+```
+
+### Getting and Cleaning Data
+
+```{r results='hide'}
+# URL of the training and testing data
+train.url ="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test.url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+# file names
+train.name = "./data/pml-training.csv"
+test.name = "./data/pml-testing.csv"
+# if directory does not exist, create new
+if (!file.exists("./data")) {dir.create("./data")}
+# if files does not exist, download the files
+if (!file.exists(train.name)) {
+  download.file(train.url, destfile=train.name)
+}
+if (!file.exists(test.name)) {
+  download.file(test.url, destfile=test.name)
+}
+# load the CSV files as data.frame 
+sTrain = read.csv("./data/pml-training.csv", na.strings = c("NA","#DIV/0!",""))
+sTest = read.csv("./data/pml-testing.csv", na.strings = c("NA","#DIV/0!",""))
+# check data
+dim(sTrain)
+dim(sTest)
+names(sTrain)
+head(sTest)
+head(sTrain)
+```
+
+The raw training data has 19622 rows of observations and 160 columns with 158 features (predictors). Column `X` is unusable row number. While the testing data has 20 rows and 160 columns with the same 158 features. There is one column of target outcome named `classe`.
+
+
+#### Split train data
+To estimate the out-of-sample error, randoml split the full training data (sTrain) into a smaller training set (sTrain1) and a validation set (sTrain2):
+
+```{r }
+inTrain <- createDataPartition(y=sTrain$classe, p=0.7, list=F)
+sTrain1 <- sTrain[inTrain, ]
+sTrain2 <- sTrain[-inTrain, ]
+```
+
+#### Clean train data
+Remove variables with nearly zero variance, variables that are almost always NA, and variables that don't make intuitive sense for prediction. 
+
+```{r }
+# remove variables with nearly zero variance
+nzv <- nearZeroVar(sTrain1)
+sTrain1 <- sTrain1[, -nzv]
+sTrain2 <- sTrain2[, -nzv]
+
+# remove variables that are almost always NA
+mostlyNA <- sapply(sTrain1, function(x) mean(is.na(x))) > 0.95
+sTrain1 <- sTrain1[, mostlyNA==F]
+sTrain2 <- sTrain2[, mostlyNA==F]
+
+# remove variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+sTrain1 <- sTrain1[, -(1:5)]
+sTrain2 <- sTrain2[, -(1:5)]
+```
+
+
+## Create the prediction model (using random forest)
+Create the prediction model (using random forest) with the firt set of training data set.
+
+```{r }
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+# fit model on sTrain1
+fit <- train(classe ~ ., data=sTrain1, method="rf", trControl=fitControl)
+fit$finalModel
+```
+
+## Measure the Accuracy and Sample Error of the prediction model
+Using the training subset, create a prediction and then measure it's accuracy. Use the fitted model to predict the label ("classe") in sTrain2, and show the confusion matrix to compare the predicted versus the actual labels:
+
+```{r }
+# use model to predict classe in validation set (sTrain2)
+preds <- predict(fit, newdata=sTrain2)
+
+# show confusion matrix to get estimate of out-of-sample error
+confusionMatrix(sTrain2$classe, preds)
+```
+
+The accuracy of the model is 99.8% and the out-of-sample error is 0.2%.
+
+## Re-Train the Model
+
+Re-train the model on the full training set (sTrain), instead of reduced training set (sTrain1), in order to produce the most accurate predictions.
+
+```{r }
+# remove variables with nearly zero variance
+nzv <- nearZeroVar(sTrain)
+sTrain <- sTrain[, -nzv]
+sTest <- sTest[, -nzv]
+
+# remove variables that are almost always NA
+mostlyNA <- sapply(sTrain, function(x) mean(is.na(x))) > 0.95
+sTrain <- sTrain[, mostlyNA==F]
+sTest <- sTest[, mostlyNA==F]
+
+# remove variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+sTrain <- sTrain[, -(1:5)]
+sTest <- sTest[, -(1:5)]
+
+# re-fit model using full training set (sTrain)
+fitControl <- trainControl(method="cv", number=3, verboseIter=F)
+fit <- train(classe ~ ., data=sTrain, method="rf", trControl=fitControl)
+# use model to predict classe in validation set (sTrain2)
+
+preds <- predict(fit, newdata=sTrain)
+
+# show confusion matrix to get estimate of out-of-sample error
+confusionMatrix(sTrain$classe, preds)
+```
+The accuracy of the model when applied to full training set if 99.98% and out of sample error is 0.02%.
+
+## Apply the prediction model to test set
+Since the accuracy is very high, I will use Random Forests to predict on the test set.
+Applying the prediction model to the test data. 
+```{r }
+# predict on test set
+preds <- predict(fit, newdata=sTest)
+preds
+
+# convert predictions to character vector
+preds <- as.character(preds)
+
+# create function to write predictions to files
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+
+# create prediction files to submit
+pml_write_files(preds)
+```
+
+## Conclusion
+The model predicted the 20 test cases with 100% accuracy. All 20 points were awarded after submitting the 20 test predictions for Course project quiz.
+
